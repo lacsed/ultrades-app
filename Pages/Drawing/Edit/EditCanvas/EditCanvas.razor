@@ -1,0 +1,296 @@
+@namespace UltraDESDraw.Components
+@inject SharedDataService SharedDataService
+@inject IJSRuntime JSRuntime
+
+<svg id="canvas" @onclick="HandleClick" @ondblclick="HandleDoubleClick" @ondblclick:stopPropagation @ondblclick:preventDefault @onmouseleave="HandleMouseLeave" 
+            @onmousedown="HandleMouseDown" @onmouseup="HandleMouseUp" @onmousemove="HandleMouseMove" @onkeydown="HandleKeyDown" 
+            @onkeyup="HandleKeyUp" @onwheel="HandleWheel" style="@SharedDataService.GetCursorType() width: 100%; height: 100%; outline: none;" class="canvas" tabindex="0"
+            viewBox="@($"{-_offsetX} {-_offsetY} {_svgWidth / _zoomLevel} {_svgHeight / _zoomLevel}")">
+    @foreach (Node node in SharedDataService.Graph.graphNodes)
+    {
+        <EditNode Node="node"/>
+    }
+    @foreach (Link link in SharedDataService.Graph.graphLinks)
+    {
+        <EditLink Link="link"/>
+    }
+    @if(SharedDataService.GetIsCreatingLink())
+    {
+        <EditTempLink/>
+    }
+</svg>
+
+
+@code {    
+    @* [Parameter]
+    public Simulation? simulation { get; set; }
+    [Parameter]
+    public EventCallback<Simulation> simulationChanged { get; set; }
+
+    private Vector2D svgOrigin = new Vector2D(); *@
+
+    private double _zoomLevel = 1.0;
+    private double _offsetX = 0.0;
+    private double _offsetY = 0.0;
+
+    // Novas variáveis para as dimensões reais do SVG
+    private double _svgWidth = 1000; // Valor padrão inicial, será atualizado
+    private double _svgHeight = 800; // Valor padrão inicial, será atualizado
+
+    private bool _isInitialized = false;
+
+    private bool holdingShift = false;
+    private bool holdingSpace = false;
+    private bool mouseDown = false;
+
+    private bool isCreatingTempLink = false;
+    private bool isCreatingTransition = false;
+    private bool isPanning = false;
+    private bool movingElement = false;
+
+    private Node? activeNodeReference;
+    private Link? activeLinkReference;
+
+    private Node? insideNodeReference;
+
+    private Vector2D tempLinkOriginState;
+    private Vector2D tempLinkDestinationState;
+    private Guid tempLinkOriginID;
+    private Guid tempLinkDestinationID;
+
+    private Vector2D tempLinkOrigin;
+    private Vector2D tempLinkMouse;
+    private Vector2D mousePosition;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && !_isInitialized)
+        {
+            await GetSvgDimensions();
+            _isInitialized = true;
+        }
+    }
+
+    private async Task GetSvgDimensions()
+    {
+        var dimensions = await JSRuntime.InvokeAsync<SvgDimensions>("svgHelper.getSvgDimensions", "canvas");
+        if (dimensions != null)
+        {
+            _svgWidth = dimensions.Width;
+            _svgHeight = dimensions.Height;
+            StateHasChanged(); // Força a renderização após obter as dimensões
+        }
+    }
+
+    // Classe auxiliar para deserializar as dimensões do JS
+    public class SvgDimensions
+    {
+        public double Width { get; set; }
+        public double Height { get; set; }
+    }
+
+    private void HandleWheel(WheelEventArgs e)
+    {
+        double scaleFactor = 1.06;
+        double oldZoom = _zoomLevel; // Salva o nível de zoom antes de modificá-lo
+
+        // Atualiza o nível de zoom
+        if (e.DeltaY < 0) // Zoom in
+        {
+            _zoomLevel *= scaleFactor;
+        }
+        else if (e.DeltaY > 0) // Zoom out
+        {
+            _zoomLevel /= scaleFactor;
+        }
+
+        // Garante que o zoom esteja dentro dos limites definidos
+        _zoomLevel = Math.Clamp(_zoomLevel, 0.5, 2);
+
+        // --- INÍCIO DA CORREÇÃO ---
+        // Calcula o ajuste necessário para _offsetX e _offsetY para manter o ponto do mouse fixo.
+        // A fórmula é baseada na ideia de que o ponto do mundo sob o mouse
+        // deve permanecer o mesmo antes e depois da mudança de zoom.
+        // _offsetX e _offsetY representam o NEGATIVO do min-x e min-y do viewBox.
+        // A coordenada do mundo sob o mouse (worldX) é dada por:
+        // worldX = -_offsetX + e.OffsetX / zoomLevel
+        // Ao igualar worldX_before e worldX_after e resolver para new_offsetX, obtemos:
+        // new_offsetX = old_offsetX + e.OffsetX * (1 / _zoomLevel - 1 / oldZoom)
+        _offsetX = _offsetX + e.OffsetX * (1 / _zoomLevel - 1 / oldZoom);
+        _offsetY = _offsetY + e.OffsetY * (1 / _zoomLevel - 1 / oldZoom);
+
+        StateHasChanged(); // Força a renderização do componente
+    }
+
+    protected override void OnInitialized()
+    {
+        SharedDataService.OnChange += StateHasChanged;
+    }
+
+    protected void Dispose()
+    {
+        SharedDataService.OnChange -= StateHasChanged;
+    }
+
+
+    private async Task HandleNodeChanged()
+    {
+        @* await simulationChanged.InvokeAsync(simulation); *@
+    }
+
+    private async void HandleDoubleClick(MouseEventArgs e)
+    {
+        Vector2D mouseScreenPosition = new Vector2D(e.OffsetX, e.OffsetY);
+        Vector2D newNodeWorldPosition = new Vector2D(
+            -_offsetX + mouseScreenPosition.x / _zoomLevel,
+            -_offsetY + mouseScreenPosition.y / _zoomLevel
+        );
+        Vector2D newNodePosition = newNodeWorldPosition.FromSvgCoordinates(SharedDataService.Graph.svgCanvas.SVGOrigin());
+        Node newNode = new Node(newNodePosition, "", false);
+        SharedDataService.Graph.graphNodes.Add(newNode);
+        SharedDataService.NotifyDataChanged();
+    }
+
+    private void HandleClick(MouseEventArgs e)
+    {
+        if (e.Button == 0)
+        {
+            if (SharedDataService.InsideNode == null)
+            {
+                SharedDataService.SelectedNode = null;
+                SharedDataService.NotifyDataChanged();
+            }
+        }
+    }
+
+    private void HandleMouseLeave(MouseEventArgs e)
+    {
+        mouseDown = false;
+    }
+
+    private async Task HandleMouseDown(MouseEventArgs e)
+    {
+        SharedDataService.CanvasMouseDownEvent(e);
+    }
+
+    private async Task HandleMouseUp(MouseEventArgs e)
+    {
+        SharedDataService.CanvasMouseUpEvent(e);
+    }
+
+    private async Task HandleNodeSelected(Node node)
+    {
+        @* if (activeLinkReference != null)
+        {
+            await activeLinkReference.HandleLoseFocus();
+            activeLinkReference = null;
+            activeNodeReference = node;
+            await activeNodeReference.HandleGainFocus();
+        }
+        else if (activeNodeReference != null && activeNodeReference != node)
+        {
+            await activeNodeReference.HandleLoseFocus();
+            activeNodeReference = node;
+            await activeNodeReference.HandleGainFocus();
+        }
+        else
+        {
+            activeNodeReference = node;
+            await activeNodeReference.HandleGainFocus();
+        }
+        movingElement = true; *@
+    }
+
+    private async Task HandleLinkSelected(Link link)
+    {
+        @* if (activeNodeReference != null)
+        {
+            await activeNodeReference.HandleLoseFocus();
+            activeNodeReference = null;
+            activeLinkReference = link;
+            await activeLinkReference.HandleGainFocus();
+        }
+        else if (activeLinkReference != null && activeLinkReference != link)
+        {
+            await activeLinkReference.HandleLoseFocus();
+            activeLinkReference = link;
+            await activeLinkReference.HandleGainFocus();
+        }
+        else
+        {
+            activeLinkReference = link;
+            await activeLinkReference.HandleGainFocus();
+        }
+        movingElement = true; *@
+    }
+
+    private void HandleLinkDeSelected(Link link)
+    {
+        if (activeLinkReference == link)
+            activeLinkReference = null;
+    }
+
+    private async Task HandleMouseMove(MouseEventArgs e)
+    {
+        SharedDataService.CanvasMouseMoveEvent(e, _offsetX, _offsetY, _zoomLevel);
+    }
+
+    // WHAT NODE THE MOUSE IS INSIDE
+
+    private void HandleEnterNode(Node node)
+    {
+        @* insideNodeReference = node;
+        if (isCreatingTempLink)
+        {
+            tempLinkDestinationState = node.position.ToSvgCoordinates(svgOrigin);
+            tempLinkDestinationID = node.nodeId;
+        } *@
+    }
+
+    private void HandleLeaveNode(Node node)
+    {
+        insideNodeReference = null;
+        if (isCreatingTempLink)
+        {
+            tempLinkDestinationState = null;
+            tempLinkDestinationID = Guid.Empty;
+        }
+    }
+
+    // KEYBOARD EVENTS
+
+    private async Task HandleKeyDown(KeyboardEventArgs e)
+    {
+        SharedDataService.CanvasKeyDownEvent(e);
+    }
+
+    private async Task HandleKeyUp(KeyboardEventArgs e)
+    {
+        SharedDataService.CanvasKeyUpEvent(e);
+    }
+
+    private async Task AddNewLink()
+    {
+        @* SMTransition newLink = new SMTransition(TransitionType.State, simulation.particles.Find(x => x.id == tempLinkOriginID), simulation.particles.Find(x => x.id == tempLinkDestinationID), "");
+        Spring newSpring = new Spring(simulation.particles.Find(x => x.id == tempLinkOriginID), simulation.particles.Find(x => x.id == tempLinkDestinationID));
+        if (activeLinkReference != null)
+        {
+            await activeLinkReference.HandleLoseFocus();
+            activeLinkReference = null;
+        }
+        else if (activeNodeReference != null)
+        {
+            await activeNodeReference.HandleLoseFocus();
+            activeNodeReference = null;
+        }
+
+        tempLinkOriginState = null;
+        tempLinkDestinationState = null;
+        isCreatingTempLink = false;
+
+        simulation.transitions.Add(newLink);
+        simulation.springs.Add(newSpring);
+
+        await InvokeAsync(StateHasChanged); *@
+    }
+}
