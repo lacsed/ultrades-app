@@ -1,5 +1,5 @@
 self.assetsManifest = {
-  "version": "mm5uLB9N",
+  "version": "sATnzoO6",
   "assets": [
     {
       "hash": "sha256-2TjxESpVmds56/lt+i15CpSnti90CsOXLDFv4dTMPhw=",
@@ -278,11 +278,11 @@ self.assetsManifest = {
       "url": "_framework/UltraDES.p62p0jt529.wasm"
     },
     {
-      "hash": "sha256-5PTtWYhVPKRdN020FUE4pukzMlYQag9PbhahbuUj740=",
-      "url": "_framework/UltraDESWeb.40axsyyb63.wasm"
+      "hash": "sha256-lFqBtNqUut1922TSbUbqI+0xtZSt344VnEzrZPzVZ2o=",
+      "url": "_framework/UltraDESWeb.87t38j3txn.wasm"
     },
     {
-      "hash": "sha256-J1PFa86Z/JsiVIx/nb+HQ2nqneN/eFn4ZCkMHOPVkCo=",
+      "hash": "sha256-zMuemS31C0czL89zoF7XfVZcU7uTfrqjYoix2E7IefQ=",
       "url": "_framework/blazor.boot.json"
     },
     {
@@ -394,7 +394,7 @@ self.assetsManifest = {
       "url": "img/logo_lacsed.png"
     },
     {
-      "hash": "sha256-nztJUEY3Xs184z81rzhWTug2xyJMtWMEEHzWMfIfib8=",
+      "hash": "sha256-3Q+1l7IYn6yn79CQMyuQM9Cicy92pOXPfnQZgUXdqJs=",
       "url": "index.html"
     },
     {
